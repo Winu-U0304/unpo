@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>超・初見殺し鬼畜ゲーム 極</title>
+<style>
+body { background-color: #111; color: #fff; font-family: 'Helvetica Neue', Arial, sans-serif; display: flex; flex-direction: row; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; user-select: none; gap: 40px; }
+#game-container { background-color: #222; padding: 30px; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.5); text-align: center; width: 450px; min-height: 400px; position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+#phone-container { width: 280px; height: 460px; background-color: #7493a1; border: 12px solid #333; border-radius: 24px; box-shadow: 0 0 20px rgba(0,0,0,0.5); display: flex; flex-direction: column; position: relative; overflow: hidden; }
+#phone-header { background-color: #2c3e50; color: white; padding: 10px; text-align: center; font-size: 14px; font-weight: bold; border-bottom: 1px solid #222; }
+#chat-area { flex: 1; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
+.msg { max-width: 80%; padding: 8px 12px; border-radius: 14px; font-size: 13px; line-height: 1.4; word-break: break-all; position: relative; animation: popMsg 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards; }
+@keyframes popMsg { 0% { transform: scale(0.7); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+.msg-left { background-color: white; color: black; align-self: flex-start; border-top-left-radius: 2px; }
+.msg-left::before { content: ""; position: absolute; left: -6px; top: 0; border-width: 5px 6px 5px 0; border-style: solid; border-color: transparent white transparent transparent; }
+h2 { margin-top: 0; font-size: 24px; color: #ff3366; }
+.stage-title { font-size: 14px; color: #aaa; margin-bottom: 5px; }
+#death-counter-display { font-size: 14px; color: #ff3366; font-weight: bold; margin-bottom: 15px; }
+.btn { background-color: #333; color: white; border: 2px solid #555; padding: 12px 24px; margin: 10px; font-size: 18px; cursor: pointer; border-radius: 5px; transition: background 0.2s, transform 0.1s; min-width: 150px; }
+.btn:hover { background-color: #444; }
+.btn:active { transform: scale(0.98); }
+.word-container { font-size: 48px; font-weight: bold; margin-bottom: 30px; display: flex; justify-content: center; align-items: center; gap: 2px; }
+.shi-char { display: inline-block; transition: transform 3.0s ease-in-out, color 3.0s ease-in-out; transform-origin: left center; }
+.ya-char { position: absolute; left: 300px; opacity: 0; color: #3399ff; transition: left 3.0s ease-in-out, opacity 3.0s ease-in-out; white-space: nowrap; }
+.overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255, 0, 50, 0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 10px; z-index: 100; animation: bloodSplatter 0.4s ease-out; }
+@keyframes bloodSplatter { 0% { transform: scale(0.5); opacity: 0; background-color: #fff; } 50% { background-color: #ff0000; } 100% { transform: scale(1); opacity: 1; } }
+.overlay h1 { font-size: 56px; margin: 0; text-shadow: 3px 3px #000; letter-spacing: 4px; animation: shake 0.2s infinite; }
+@keyframes shake { 0% { transform: translate(2px, 1px) rotate(0deg); } 10% { transform: translate(-1px, -2px) rotate(-1deg); } 20% { transform: translate(-3px, 0px) rotate(1deg); } 30% { transform: translate(0px, 2px) rotate(0deg); } 40% { transform: translate(1px, -1px) rotate(1deg); } 50% { transform: translate(-1px, 2px) rotate(-1deg); } 60% { transform: translate(-3px, 1px) rotate(0deg); } 70% { transform: translate(2px, 1px) rotate(-1deg); } 80% { transform: translate(-1px, -1px) rotate(1deg); } 90% { transform: translate(2px, 2px) rotate(0deg); } 100% { transform: translate(1px, -2px) rotate(-1deg); } }
+.reason { font-size: 36px; font-weight: bold; margin: 20px 0; text-shadow: 2px 2px #000; white-space: nowrap; }
+.judge-mark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0); font-size: 150px; font-weight: bold; z-index: 200; pointer-events: none; }
+@keyframes popMark { 0% { transform: translate(-50%, -50%) scale(0); opacity: 0; } 50% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+.hidden-trigger { cursor: pointer; }
+.toge-btn { position: relative; }
+.toge { position: absolute; top: -15px; left: 45%; font-size: 24px; display: none; color: #ff3366; }
+.falling-object { position: absolute; top: -40px; font-size: 40px; animation: fallDown 1.5s linear forwards; }
+@keyframes fallDown { 0% { top: -40px; } 100% { top: 200px; } }
+.sand-particle { position: absolute; background: #ffcc66; width: 4px; height: 4px; border-radius: 50%; animation: particleFall 1.0s ease-in forwards; }
+@keyframes particleFall { 0% { transform: translate(0, 0); opacity: 1; } 100% { transform: translate(var(--x), var(--y)); opacity: 0.8; } }
+#sand-pile { position: absolute; bottom: 40px; left: 25%; width: 50%; height: 0px; background: #ffcc66; border-radius: 50% 50% 0 0; transition: height 0.5s ease-out; cursor: pointer; display: none; }
+.fake-popup { position: absolute; top: -60px; left: 5%; width: 90%; background: rgba(30,30,30,0.95); border: 1px solid #444; border-radius: 12px; padding: 10px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 50; transition: top 0.3s ease-out; }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <div id="stage-area"></div>
+  <div id="judge" class="judge-mark"></div>
+</div>
+<div id="phone-container">
+  <div id="phone-header">通知窓</div>
+  <div id="chat-area"></div>
+</div>
+
+<script>
+let currentStage = 1;
+let deathCount = 0;
+let audioCtx = null;
+let judging = false;      // 判定中の二重入力防止
+let stageToken = 0;       // ステージ切替時に古いタイマーを無効化
+let outerHandler = null;  // ステージ15用の背景クリック
+
+const stageArea = document.getElementById('stage-area');
+const judge = document.getElementById('judge');
+const chatArea = document.getElementById('chat-area');
+
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+}
+
+function playSound(type) {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  if (type === 'correct') {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(660, now);
+    osc.frequency.setValueAtTime(880, now + 0.1);
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.3);
+  } else if (type === 'miss') {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.linearRampToValueAtTime(80, now + 0.4);
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.4);
+  } else if (type === 'tettele') {
+    const notes = [523.25, 659.25, 783.99, 1046.50];
+    notes.forEach((freq, index) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(freq, now + index * 0.12);
+      gain.gain.setValueAtTime(0.15, now + index * 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + index * 0.12 + 0.2);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(now + index * 0.12); osc.stop(now + index * 0.12 + 0.2);
+    });
+  } else if (type === 'bgm') {
+    const notes = [261.63, 293.66, 329.63, 349.23, 392.00, 349.23, 329.63, 293.66];
+    notes.forEach((freq, index) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now + index * 0.25);
+      gain.gain.setValueAtTime(0.05, now + index * 0.25);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.25 + 0.22);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(now + index * 0.25); osc.stop(now + index * 0.25 + 0.25);
+    });
+  }
+}
+
+function sendInsult(text) {
+  const msg = document.createElement('div');
+  msg.className = 'msg msg-left';
+  msg.innerText = text;
+  chatArea.appendChild(msg);
+  chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+function showGameOver(deathType, comment) {
+  deathCount++;
+  playSound('miss');
+  sendInsult(comment);
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = `<h1>GAME OVER</h1><div class="reason">${deathType}</div><button class="btn" onclick="restartStage()">このステージをやり直す</button>`;
+  document.getElementById('game-container').appendChild(overlay);
+}
+
+function triggerJudge(isCorrect, callback) {
+  if (judging) return;
+  judging = true;
+  judge.style.animation = 'none';
+  judge.offsetHeight;
+  if (isCorrect) {
+    judge.innerText = '〇';
+    judge.style.color = '#00ffcc';
+    playSound('correct');
+  } else {
+    judge.innerText = '×';
+    judge.style.color = '#ff3366';
+  }
+  judge.style.animation = 'popMark 0.4s forwards';
+  setTimeout(() => {
+    judge.style.animation = 'none';
+    judge.style.transform = 'translate(-50%, -50%) scale(0)';
+    callback();
+  }, 600);
+}
+
+function restartStage() { loadStage(currentStage); }
+
+function nextStage() {
+  currentStage++;
+  if (currentStage > 15) {
+    showClear();
+  } else {
+    loadStage(currentStage);
+  }
+}
+
+function showClear() {
+  stageToken++;
+  judging = false;
+  if (outerHandler) { document.removeEventListener('click', outerHandler); outerHandler = null; }
+  stageArea.innerHTML = `<h1 style="color: #00ffcc; font-size: 36px;">終わり</h1><p style="font-size:18px;">おわり<br>END</p><div style="font-size:24px; color:#ff3366; font-weight:bold; margin:20px 0;">総死亡回数: ${deathCount} 回</div><button class="btn" onclick="deathCount=0; currentStage=1; loadStage(1);">最初から遊ぶ</button>`;
+  playSound('tettele');
+}
+
+function updateTitle(stageNum) {
+  return `<div class="stage-title">ステージ ${stageNum} / 15</div><div id="death-counter-display">DEATH: ${deathCount}</div>`;
+}
+
+function loadStage(stageNum) {
+  initAudio();
+  const token = ++stageToken;
+  judging = false;
+  if (outerHandler) { document.removeEventListener('click', outerHandler); outerHandler = null; }
+  const oldOverlay = document.querySelector('.overlay');
+  if (oldOverlay) oldOverlay.remove();
+  stageArea.innerHTML = '';
+
+  switch (stageNum) {
+    case 1:
+      stageArea.innerHTML = `${updateTitle(1)}<h2>これは何と読むでしょう？</h2>
+        <div class="word-container"><span>ハ</span>
+          <div style="position: relative; display: inline-flex; align-items: center; width: 60px; height: 60px;">
+            <span id="shi" class="shi-char">シ</span><span id="ya" class="ya-char">也</span>
+          </div>
+        </div>
+        <div>
+          <button class="btn" id="ans-hashi">橋</button>
+          <button class="btn" onclick="triggerJudge(false, () => showGameOver('溺死', '「牛」はどこから出てきた。'))">牛</button>
+          <button class="btn" onclick="triggerJudge(true, nextStage)">ハ池</button>
+        </div>`;
+      document.getElementById('ans-hashi').addEventListener('click', () => {
+        const shi = document.getElementById('shi');
+        const ya = document.getElementById('ya');
+        shi.style.transform = 'scaleX(0.25) scaleY(1.1)';
+        shi.style.color = '#3399ff';
+        ya.style.left = '16px';
+        ya.style.opacity = '1';
+        setTimeout(() => {
+          if (token !== stageToken) return;
+          triggerJudge(false, () => showGameOver('溺死', '「橋」を押した瞬間に「シ」が「氵」に変形し、「也」が合体して【ハ池】になりました！'));
+          playSound('tettele');
+        }, 3200);
+      }, { once: true });
+      break;
+
+    case 2:
+      stageArea.innerHTML = `${updateTitle(2)}<h2>どちらの道に進む？</h2>
+        <button class="btn toge-btn" id="safe-btn">安全な道<span id="toge" class="toge">📍</span></button>
+        <button class="btn" onclick="triggerJudge(true, nextStage)">危険な道</button>`;
+      document.getElementById('safe-btn').addEventListener('click', () => {
+        document.getElementById('toge').style.display = 'block';
+        setTimeout(() => triggerJudge(false, () => showGameOver('刺死', '安全な道にトゲが仕掛けられていた！罠だ！')), 200);
+      });
+      break;
+
+    case 3:
+      stageArea.innerHTML = `${updateTitle(3)}<h2>ゴールをクリックせよ</h2>
+        <button class="btn" id="run-btn" style="position: absolute; z-index:10; top: 140px; left: 140px;">ここをクリック</button>
+        <div id="real-goal" class="hidden-trigger" style="position: absolute; bottom: 5px; right: 5px; width: 4px; height: 4px; background: #555;"></div>`;
+      const runBtn = document.getElementById('run-btn');
+      runBtn.addEventListener('mouseover', () => {
+        runBtn.style.top = Math.random() * 200 + 70 + 'px';
+        runBtn.style.left = Math.random() * 240 + 20 + 'px';
+        playSound('bgm');
+      });
+      runBtn.addEventListener('click', () => triggerJudge(false, () => showGameOver('爆死', 'よく追いついたが、これは爆破スイッチだ！')));
+      document.getElementById('real-goal').addEventListener('click', () => triggerJudge(true, nextStage));
+      break;
+
+    case 4:
+      stageArea.innerHTML = `${updateTitle(4)}<h2>読み込み中...</h2>
+        <div style="font-size:24px; margin:20px;">Now Loading... 99%</div>
+        <button class="btn" onclick="triggerJudge(false, () => showGameOver('通信死', '通信エラーを起こしました。'))">ページを再読み込み</button>
+        <div class="hidden-trigger" onclick="triggerJudge(true, nextStage)" style="font-size:11px; color:#444; margin-top:20px;">[広告をスキップして次へ]</div>`;
+      break;
+
+    case 5:
+      stageArea.innerHTML = `${updateTitle(5)}<h2>1 + 1 = <span class="hidden-trigger" onclick="triggerJudge(true, nextStage)" style="border-bottom: 2px dashed #ff3366;">？</span></h2>
+        <button class="btn" onclick="triggerJudge(false, () => showGameOver('計算死', '普通すぎます。ひねりが足りません。'))">2</button>
+        <button class="btn" onclick="triggerJudge(false, () => showGameOver('計算死', 'なぜ3だと思った？'))">3</button>
+        <button class="btn" onclick="triggerJudge(false, () => showGameOver('計算死', '文字列結合ではありません。'))">11</button>`;
+      break;
+
+    case 6:
+      stageArea.innerHTML = `${updateTitle(6)}<h2>⚠️警告：音量が大きすぎます！</h2><p>ただちに音量を下げてください！</p>
+        <button class="btn" onclick="triggerJudge(false, () => showGameOver('鼓膜破壊死', '「音量を下げる」ボタンに見せかけた、音量MAXボタンでした。'))">音量を下げる</button>
+        <button class="btn" onclick="triggerJudge(true, nextStage)" style="background:#111; border-color:#222;">ミュート</button>`;
+      break;
+
+    case 7:
+      stageArea.innerHTML = `${updateTitle(7)}<h2>目の前に宝箱がある。</h2>
+        <div style="font-size: 50px; margin: 10px;" class="hidden-trigger" onclick="triggerJudge(true, nextStage)">🧰</div>
+        <p style="color: #ff3366;">※絶対に開けるな！危険！</p>
+        <button class="btn" onclick="triggerJudge(false, () => showGameOver('墜落死', '立ち去ろうとしたら床に落とし穴がありました。'))">立ち去る</button>`;
+      break;
+
+    case 8: {
+      stageArea.innerHTML = `${updateTitle(8)}<h2>爆弾を解除せよ！残り <span id="timer" class="hidden-trigger" style="color:red; font-weight:bold;">3</span> 秒</h2>
+        <button class="btn" style="background: red;" id="bomb-red">赤い線を切る</button>
+        <button class="btn" style="background: blue;" id="bomb-blue">青い線を切る</button>`;
+      let count = 3;
+      const timerId = setInterval(() => {
+        if (token !== stageToken) { clearInterval(timerId); return; }
+        count--;
+        playSound('bgm');
+        const t = document.getElementById('timer');
+        if (t) t.innerText = count;
+        if (count <= 0) {
+          clearInterval(timerId);
+          triggerJudge(false, () => showGameOver('爆死', '時間切れ爆発！数字を押して時間を止めるのが正解でした。'));
+        }
+      }, 1000);
+      document.getElementById('timer').addEventListener('click', () => { clearInterval(timerId); triggerJudge(true, nextStage); });
+      document.getElementById('bomb-red').addEventListener('click', () => { clearInterval(timerId); triggerJudge(false, () => showGameOver('爆死', '赤を切ったら即爆発！定番の罠！')); });
+      document.getElementById('bomb-blue').addEventListener('click', () => { clearInterval(timerId); triggerJudge(false, () => showGameOver('爆死', '青を切ったらカウントダウンが加速して爆発した！')); });
+      break;
+    }
+
+    case 9:
+      stageArea.innerHTML = `${updateTitle(9)}<h2>ゲーム利用規約に同意しますか？</h2>
+        <div style="background:#333; font-size:10px; height:80px; overflow-y:scroll; padding:5px; text-align:left; color:#777;">第1条：当アプリの規約。<br>第2条：プレイヤーはプレイを続行する権利を有します。<br>第3条：なお、同意するボタンを押した瞬間にゲームオーバーになるものとします。</div>
+        <button class="btn" onclick="triggerJudge(false, () => showGameOver('契約死', '規約の第3条をよく読みましたか？'))">同意する</button>
+        <button class="btn" onclick="triggerJudge(true, nextStage)">同意しない</button>`;
+      break;
+
+    case 10:
+      stageArea.innerHTML = `${updateTitle(10)}<h2>ついに最終ステージ！？</h2>
+        <button class="btn" id="clear-btn" style="background: green;">ゲームクリア！</button>
+        <button class="btn" onclick="triggerJudge(true, nextStage)" style="background: #555;">自爆スイッチ</button>`;
+      document.getElementById('clear-btn').addEventListener('click', () => {
+        const b = document.getElementById('clear-btn');
+        b.innerText = '自爆';
+        b.style.background = 'red';
+        setTimeout(() => triggerJudge(false, () => showGameOver('裏切り死', 'クリア直前でボタンが「自爆」にすり替わった！あえて自爆を押すのが正解！')), 300);
+      });
+      break;
+
+    case 11: {
+      // 音符(🎵)は判定ラインでタップ、タライ(⚱️)は叩かず見送るのが正解
+      stageArea.innerHTML = `${updateTitle(11)}<h2>【音ゲー】タイミングよく叩け！</h2>
+        <div id="music-lane" style="position:relative; width:300px; height:180px; background:#333; margin:10px auto; border-radius:5px; overflow:hidden;">
+          <div style="position:absolute; top:160px; width:100%; height:2px; background:cyan;"></div>
+        </div>
+        <button class="btn" id="music-btn">TAP!!</button>`;
+      const lane = document.getElementById('music-lane');
+      let activeObj = null;
+      let finished = false;
+
+      const spawnTimer = setTimeout(() => {
+        if (token !== stageToken || finished) return;
+        playSound('bgm');
+        const isNote = Math.random() > 0.5;
+        const obj = document.createElement('div');
+        obj.className = 'falling-object';
+        obj.style.left = '130px';
+        obj.innerText = isNote ? '🎵' : '⚱️';
+        obj.dataset.type = isNote ? 'note' : 'tarai';
+        lane.appendChild(obj);
+        activeObj = obj;
+
+        setTimeout(() => {
+          if (token !== stageToken || finished) return;
+          finished = true;
+          obj.remove();
+          if (obj.dataset.type === 'tarai') {
+            triggerJudge(true, nextStage);
+          } else {
+            triggerJudge(false, () => showGameOver('見逃し死', '流れてきた音符をスルーするな！'));
+          }
+        }, 1500);
+      }, 500);
+
+      document.getElementById('music-btn').addEventListener('click', () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(spawnTimer);
+        if (!activeObj) {
+          triggerJudge(false, () => showGameOver('空振り死', '何も流れてきてないのに叩くのは草'));
+          return;
+        }
+        const topPos = activeObj.offsetTop;
+        const type = activeObj.dataset.type;
+        activeObj.remove();
+        if (type === 'tarai') {
+          triggerJudge(false, () => showGameOver('タライ直撃死', 'タライを自分で叩きにいくスタイルｗｗ'));
+        } else if (topPos > 110 && topPos < 175) {
+          triggerJudge(true, nextStage);
+        } else {
+          triggerJudge(false, () => showGameOver('タイミングミス死', '音符を叩くタイミングがズレています！'));
+        }
+      });
+      break;
+    }
+
+    case 12: {
+      stageArea.innerHTML = `${updateTitle(12)}<h2>進むボタンを選べ</h2>
+        <div style="height:150px; position:relative; width:100%;" id="sand-box">
+          <button class="btn" id="dis-btn" style="position:absolute; top:20px; left:140px; margin:0;">続ける</button>
+          <div id="sand-pile"></div>
+        </div>
+        <button class="btn" onclick="triggerJudge(false, () => showGameOver('逃亡死', 'やめるボタンを押したらそりゃゲームオーバーよｗ'))" style="background:#555;">やめる</button>`;
+      const disBtn = document.getElementById('dis-btn');
+      const sBox = document.getElementById('sand-box');
+      const sPile = document.getElementById('sand-pile');
+      disBtn.addEventListener('click', () => {
+        playSound('miss');
+        const rect = disBtn.getBoundingClientRect();
+        const boxRect = sBox.getBoundingClientRect();
+        for (let i = 0; i < 60; i++) {
+          const p = document.createElement('div');
+          p.className = 'sand-particle';
+          p.style.left = (rect.left - boxRect.left + Math.random() * rect.width) + 'px';
+          p.style.top = (rect.top - boxRect.top + Math.random() * rect.height) + 'px';
+          p.style.setProperty('--x', (Math.random() * 100 - 50) + 'px');
+          p.style.setProperty('--y', (120 + Math.random() * 40) + 'px');
+          sBox.appendChild(p);
+          setTimeout(() => p.remove(), 1000);
+        }
+        disBtn.style.display = 'none';
+        sPile.style.display = 'block';
+        setTimeout(() => { sPile.style.height = '30px'; }, 100);
+      });
+      sPile.addEventListener('click', () => triggerJudge(true, nextStage));
+      break;
+    }
+
+    case 13:
+      stageArea.innerHTML = `${updateTitle(13)}<h2>ポーズメニュー画面</h2>
+        <div style="background:rgba(255,255,255,0.1); padding:20px; border-radius:8px; margin:20px;" id="pause-screen">
+          <p style="color:#ccc; margin-top:0;">一時中断中</p>
+          <button class="btn" id="restart-btn" style="background:#ff3366;">最初から再開する</button>
+        </div>`;
+      document.getElementById('restart-btn').addEventListener('click', () => {
+        triggerJudge(false, () => {
+          currentStage = 1;
+          showGameOver('最初からやり直し死', '「最初から再開する」を文字通り実行してステージ1に戻してあげました。');
+        });
+      });
+      document.getElementById('pause-screen').addEventListener('click', (e) => {
+        if (e.target.tagName !== 'BUTTON') triggerJudge(true, nextStage);
+      });
+      break;
+
+    case 14: {
+      stageArea.innerHTML = `${updateTitle(14)}<h2>画面を10回クリックせよ</h2>
+        <div style="font-size:32px; font-weight:bold; margin:20px;" id="click-count">0 / 10</div>
+        <button class="btn" id="count-btn">クリック！</button>
+        <div class="fake-popup" id="alert-pop">
+          <div><b style="color:#ffcc00; font-size:12px;">⚠️ システム警告</b><div style="font-size:11px; color:#ccc;">バッテリー残量が少なくなっています (1%)</div></div>
+          <div style="background:#444; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer;" id="close-pop">閉じる</div>
+        </div>`;
+      let clickNum = 0;
+      const cBtn = document.getElementById('count-btn');
+      const aPop = document.getElementById('alert-pop');
+      setTimeout(() => {
+        if (token === stageToken && aPop) { aPop.style.top = '10px'; playSound('miss'); }
+      }, 1200);
+      document.getElementById('close-pop').addEventListener('click', (e) => {
+        e.stopPropagation();
+        triggerJudge(false, () => showGameOver('広告トラップ死', '偽のポップアップ通知に引っかかりましたねｗ'));
+      });
+      cBtn.addEventListener('click', () => {
+        if (judging) return;
+        playSound('bgm');
+        clickNum++;
+        document.getElementById('click-count').innerText = `${clickNum} / 10`;
+        if (clickNum >= 10) triggerJudge(true, nextStage);
+      });
+      break;
+    }
+
+    case 15:
+      stageArea.innerHTML = `${updateTitle(15)}<h2>今度こそ本当に最終選択</h2>
+        <button class="btn" id="true-clear" style="background:green;">ゲームクリア</button>
+        <button class="btn" onclick="triggerJudge(false, () => showGameOver('自爆死', '最後の最後で自爆を選ぶその思い切りの良さは嫌いじゃないよｗ'))" style="background:red;">自爆</button>`;
+      document.getElementById('true-clear').addEventListener('click', () => {
+        triggerJudge(false, () => showGameOver('騙され死（正解は画面外のどこか…？）', 'クリアボタンは罠！正解は画面の外（背景）のクリックでした！'));
+      });
+      // 背景（ゲーム画面・スマホ以外）のクリックが正解
+      outerHandler = (e) => {
+        const inGame = document.getElementById('game-container').contains(e.target);
+        const inPhone = document.getElementById('phone-container').contains(e.target);
+        if (!inGame && !inPhone) {
+          document.removeEventListener('click', outerHandler);
+          outerHandler = null;
+          triggerJudge(true, nextStage);
+        }
+      };
+      setTimeout(() => { if (token === stageToken && outerHandler) document.addEventListener('click', outerHandler); }, 0);
+      break;
+  }
+
+  const footer = document.createElement('div');
+  footer.style = 'margin-top:20px; font-size:12px; color:#555; cursor:pointer; text-decoration:underline;';
+  footer.innerText = '2も実装計画しております。';
+  footer.onclick = () => { playSound('miss'); alert('馬と鹿だね！あ'); };
+  stageArea.appendChild(footer);
+}
+
+loadStage(1);
+</script>
+</body>
+</html>
