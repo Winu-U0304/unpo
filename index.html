@@ -450,136 +450,132 @@ EXTRA[25] = (token) => {
 };
 
 EXTRA[26] = (token) => {
-  stageArea.innerHTML = `${updateTitle(26)}<h2>水桶チャレンジ：一滴残らずコップへ！</h2>
-    <canvas id="cw" width="520" height="330" style="background:#fff;border:2px solid #ddd;border-radius:6px;cursor:crosshair;max-width:100%"></canvas>
-    <div style="font-size:12px;color:#aaa;margin-top:6px"><b>WASD / 矢印</b>で一人称移動、マウスで視点変更。桶の前で <b>Space</b> ですくい、コップの前で <b>E</b> で注ぐ。床にこぼれた水は消えない！水滴の上で <b>E</b> を押してコップに回収しよう。ショップに近づいて <b>E</b> で道具を購入。</div>`;
+  stageArea.innerHTML = `${updateTitle(26)}<h2>水桶チャレンジ：小人が一滴ずつ運ぶ！</h2>
+    <div style="display:flex;justify-content:flex-end;margin:8px 0"><button id="cwfs" class="btn" type="button">⛶ プレイ画面を全画面表示</button></div><canvas id="cw" width="760" height="390" style="background:#fff;border:2px solid #ddd;border-radius:6px;cursor:pointer;max-width:100%;width:100%;image-rendering:auto"></canvas>
+    <div style="font-size:12px;color:#aaa;margin-top:6px">2D横視点。<b>WASD / 矢印</b>で小人を移動、床をクリックしてもその場所へ歩くよ。桶の横のはしごを登って <b>Space</b> で水を一滴すくい、コップのところで <b>E</b> で入れよう。歩き方によって水滴が自然にこぼれることも。床の水滴は近づいて <b>E</b> で回収。SHOPで道具を強化！</div>`;
   const cv = $('cw'), g = cv.getContext('2d'), W = cv.width, H = cv.height;
-  const keys = {};
-  let px = 0, pz = -2.7, yaw = 0, pitch = 0, lastX = null, lastY = null;
-  let bucket = 100, cup = 0, carried = 0, spilled = [], totalSpilled = 0, recovered = 0;
-  let tool = 0, message = '桶の水をコップへ運ぼう。こぼれた水も全部回収！', msgT = 5, done = false;
-  const upgrades = [
-    {name:'小さなコップ', cost:0, cap:8, spill:.30},
-    {name:'大きめコップ', cost:15, cap:15, spill:.22},
-    {name:'ふた付きコップ', cost:35, cap:22, spill:.12},
-    {name:'水回収ネット', cost:60, cap:30, spill:.06}
-  ];
-  let credits = 0;
-  const say = t => { message = t; msgT = 3; };
-  const kd = e => {
-    const k = e.key.toLowerCase();
-    if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
-    keys[k] = true;
-    if (k === ' ' && near(0, 2.5, 1.15) && bucket > 0 && carried < upgrades[tool].cap) {
-      const n = Math.min(bucket, upgrades[tool].cap - carried, 8);
-      if (n > 0) { bucket -= n; carried += n; say(`コップに水を ${n}% すくった！ゆっくり運ぼう。`); }
-    }
-    if (k === 'e') interact();
+  const fsBtn = $('cwfs');
+  const updateFsLabel = () => { if (fsBtn) fsBtn.textContent = document.fullscreenElement === stageArea ? '⛶ 全画面を終了' : '⛶ プレイ画面を全画面表示'; };
+  const onFsChange = () => updateFsLabel();
+  fsBtn.onclick = async () => {
+    try {
+      if (document.fullscreenElement === stageArea) await document.exitFullscreen();
+      else if (stageArea.requestFullscreen) await stageArea.requestFullscreen();
+      else say('このブラウザでは全画面表示に対応していないよ。');
+    } catch (_) { say('全画面表示にできなかったよ。ブラウザの設定を確認してね。'); }
+    updateFsLabel();
   };
-  const ku = e => { keys[e.key.toLowerCase()] = false; };
-  document.addEventListener('keydown', kd); document.addEventListener('keyup', ku);
-  cleanups.push(() => { document.removeEventListener('keydown', kd); document.removeEventListener('keyup', ku); });
-  cv.addEventListener('pointerdown', e => { cv.setPointerCapture?.(e.pointerId); lastX=e.clientX; lastY=e.clientY; });
-  cv.addEventListener('pointermove', e => {
-    if (!(e.buttons & 1) || lastX === null) return;
-    yaw += (e.clientX-lastX)*.008; pitch = Math.max(-.35,Math.min(.35,pitch+(e.clientY-lastY)*.004));
-    lastX=e.clientX; lastY=e.clientY;
+  document.addEventListener('fullscreenchange', onFsChange);
+  cleanups.push(() => document.removeEventListener('fullscreenchange', onFsChange));
+  const keys = {}; let x=95, y=286, target=null, facing=1;
+  let bucket=100, cup=0, carried=0, spilled=[], credits=0, tool=0, done=false, message='はしごを登って、桶の水を一滴ずつ運ぼう！';
+  let walkT=0, spillClock=0;
+  const upgrades=[
+    {name:'箸で一滴運び',cost:0,cap:1,spill:0.18},
+    {name:'安定した箸',cost:8,cap:1,spill:0.09},
+    {name:'小さな水受け',cost:18,cap:2,spill:0.045},
+    {name:'水滴キャッチ網',cost:35,cap:3,spill:0.015}
+  ];
+  const say=t=>{message=t;};
+  const ladder={x:190,top:165,bottom:300};
+  const cupArea={x:505,y:300}; const shopArea={x:665,y:286};
+  const kd=e=>{
+    const k=e.key.toLowerCase(); if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' ','e'].includes(k)) e.preventDefault();
+    keys[k]=true;
+    if(k===' '){
+      if(Math.abs(x-ladder.x)<45 && y<205 && bucket>0 && carried<upgrades[tool].cap){
+        const n=Math.min(1,bucket,upgrades[tool].cap-carried); bucket-=n;carried+=n;say('箸で水を一滴つまんだ！ゆっくり運ぼう。');
+      } else say('桶の上まで、はしごを登ってね。');
+    }
+    if(k==='e') interact();
+  };
+  const ku=e=>{keys[e.key.toLowerCase()]=false;};
+  document.addEventListener('keydown',kd);document.addEventListener('keyup',ku);
+  cleanups.push(()=>{document.removeEventListener('keydown',kd);document.removeEventListener('keyup',ku);});
+  cv.addEventListener('click',e=>{
+    const r=cv.getBoundingClientRect(); target={x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height};
+    // Clicking a destination moves the tiny person; there is no drag-to-look camera control in this 2D stage.
   });
-  cv.addEventListener('pointerup', () => { lastX=null; lastY=null; });
-  function near(x,z,r){ return Math.hypot(px-x,pz-z)<r; }
-  function interact() {
-    if (near(-2,2.5,1.25) && carried > 0) {
-      cup += carried; carried = 0; credits += Math.floor(cup/10); say('コップへ注いだ！ショップで道具を強化できるよ。'); return;
+  function interact(){
+    if(Math.abs(x-cupArea.x)<45 && y>265){
+      if(carried>0){const poured=carried;const beforeCup=cup;cup+=poured;carried=0;const earned=Math.max(0,Math.floor((cup+0.001)/3)-Math.floor((beforeCup+0.001)/3));credits+=earned;say(`コップに水を入れた！${earned}コイン獲得（3水滴ごとに1コイン）。`);}
+      else say('手元に水滴がないよ。桶か床から回収しよう。'); return;
     }
-    const d = spilled.findIndex(d => Math.hypot(px-d.x,pz-d.z)<.85);
-    if (d >= 0) {
-      const drop = spilled.splice(d,1)[0];
-      const room = upgrades[tool].cap-carried;
-      const n = Math.min(drop.amount, room);
-      carried += n;
-      if (drop.amount > n) spilled.push({...drop, amount:drop.amount-n});
-      recovered += n; say(`床の水滴を ${n.toFixed(1)}% 回収！残りの水滴も探そう。`); return;
+    const i=spilled.findIndex(d=>Math.hypot(x-d.x,y-d.y)<30);
+    if(i>=0 && carried<upgrades[tool].cap){
+      const d=spilled[i], room=upgrades[tool].cap-carried, picked=Math.min(d.amount,room);
+      carried+=picked; d.amount-=picked;
+      if(d.amount<0.001) spilled.splice(i,1);
+      say(d.amount>0.001?'水滴の一部を回収した！残りも拾おう。':'床の水滴を回収した！');return;
     }
-    if (near(3.2,-1.5,1.35)) {
-      if (tool < upgrades.length-1 && credits >= upgrades[tool+1].cost) {
-        tool++; credits -= upgrades[tool].cost; say(`ショップ購入！${upgrades[tool].name}にアップグレード！`);
-      } else if (tool < upgrades.length-1) say(`次の強化「${upgrades[tool+1].name}」には ${upgrades[tool+1].cost} コイン必要。注いだ水でコインを得よう。`);
-      else say('ショップの強化は全部そろった！');
-      return;
+    if(Math.abs(x-shopArea.x)<50 && y>250){
+      const next=upgrades[tool+1]; if(next&&credits>=next.cost){tool++;credits-=next.cost;say(`購入成功！${upgrades[tool].name}になった！`);}else if(next)say(`次の強化「${next.name}」は${next.cost}コイン必要。`);else say('ショップの強化は全部そろった！');return;
     }
-    if (near(-2,2.5,1.25) && carried <= 0) { say('コップに水がないよ。桶か床の水滴から回収しよう。'); return; }
-    say('近くに桶・コップ・ショップ・水滴がないみたい。');
+    say('コップ・水滴・ショップの近くで E を押してね。');
   }
-  function project(x,y,z) {
-    const dx=x-px, dz=z-pz, c=Math.cos(yaw), s=Math.sin(yaw);
-    const rx=dx*c-dz*s, rz=dx*s+dz*c;
-    const depth=rz+4.8;
-    if(depth<.18) return null;
-    const scale=260/depth;
-    return [W/2+rx*scale, H*.55-(y-1.55-pitch*depth)*scale, scale, depth];
+  function drawPerson(){
+    // Tiny, friendly 2D worker with chopsticks holding a single droplet.
+    const bob=Math.sin(walkT*10)*2, px=x, py=y+bob;
+    g.strokeStyle='#5a4637';g.lineWidth=3;g.lineCap='round';
+    g.beginPath();g.moveTo(px-4,py-13);g.lineTo(px-9,py-3);g.moveTo(px+4,py-13);g.lineTo(px+9,py-3);g.stroke();
+    g.fillStyle='#4b9bd5';g.fillRect(px-7,py-31,14,17);
+    g.strokeStyle='#e3b28e';g.lineWidth=3;g.beginPath();g.moveTo(px-6,py-26);g.lineTo(px-13,py-18);g.moveTo(px+6,py-26);g.lineTo(px+13,py-19);g.stroke();
+    g.fillStyle='#eac09b';g.beginPath();g.arc(px,py-38,7,0,Math.PI*2);g.fill();
+    g.fillStyle='#49352b';g.beginPath();g.arc(px,py-41,7,Math.PI,Math.PI*2);g.fill();
+    g.fillStyle='#222';g.fillRect(px-3,py-39,1.5,2);g.fillRect(px+3,py-39,1.5,2);
+    if(carried>0){g.strokeStyle='#a77a45';g.lineWidth=1.8;g.beginPath();g.moveTo(px+10,py-20);g.lineTo(px+23,py-26);g.moveTo(px+11,py-18);g.lineTo(px+24,py-24);g.stroke();g.fillStyle='#50bfff';g.beginPath();g.ellipse(px+25,py-26,3,4,0,0,Math.PI*2);g.fill();}
   }
-  function line3(a,b,color,width=1) {
-    const p=project(...a), q=project(...b); if(!p||!q)return;
-    g.strokeStyle=color; g.lineWidth=Math.max(.6,width*(p[2]+q[2])/2/100); g.beginPath();g.moveTo(p[0],p[1]);g.lineTo(q[0],q[1]);g.stroke();
-  }
-  function polygon(points,fill,stroke=null) {
-    const ps=points.map(p=>project(...p)); if(ps.some(p=>!p))return;
-    g.beginPath();ps.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.closePath();g.fillStyle=fill;g.fill();
-    if(stroke){g.strokeStyle=stroke;g.stroke();}
-  }
-  function box(x,z,w,d,h,color) {
-    polygon([[x-w/2,0,z-d/2],[x+w/2,0,z-d/2],[x+w/2,h,z-d/2],[x-w/2,h,z-d/2]],color);
-    polygon([[x+w/2,0,z-d/2],[x+w/2,0,z+d/2],[x+w/2,h,z+d/2],[x+w/2,h,z-d/2]],color);
-    polygon([[x-w/2,h,z-d/2],[x+w/2,h,z-d/2],[x+w/2,h,z+d/2],[x-w/2,h,z+d/2]],color);
-  }
-  function frame(now) {
+  function frame(now){
     if(token!==stageToken||done)return;
-    const dt=Math.min(.04,(now-(frame.last||now))/1000); frame.last=now;
-    const speed=2.8*dt, f=(keys.w||keys.arrowup?1:0)-(keys.s||keys.arrowdown?1:0), side=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0);
-    px += (Math.sin(yaw)*f+Math.cos(yaw)*side)*speed;
-    pz += (Math.cos(yaw)*f-Math.sin(yaw)*side)*speed;
-    px=Math.max(-4.7,Math.min(4.7,px)); pz=Math.max(-4.2,Math.min(4.2,pz));
-    // Movement sloshes water out; spilled drops remain on the floor until picked up.
-    if(carried>0 && (f||side)) {
-      const amount=Math.min(carried,upgrades[tool].spill*dt*(Math.abs(f)+Math.abs(side))*3);
-      if(amount>.015){carried-=amount;spilled.push({x:px-Math.sin(yaw)*.3+(Math.random()-.5)*.25,z:pz-Math.cos(yaw)*.3+(Math.random()-.5)*.25,amount});totalSpilled+=amount;}
+    const dt=Math.min(.04,(now-(frame.last||now))/1000);frame.last=now;
+    let dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0);
+    if(target){const tx=target.x-x,ty=target.y-y,dist=Math.hypot(tx,ty);if(dist>5){dx=tx/dist;dy=ty/dist;}else target=null;}
+    // 上方向への移動は、はしごの位置でだけ許可する。クリック移動でも同じ制限を適用。
+    const nearLadder = Math.abs(x-ladder.x) < 22;
+    const alreadyElevated = y < 278;
+    if(dy < 0 && !nearLadder && !alreadyElevated) dy = 0;
+    // はしごから横へ離れている状態で、床から上段へ斜めに抜けるのを防止。
+    if(!alreadyElevated && y + dy * 90 * dt < 278 && !nearLadder) dy = 0;
+    const moving=!!(dx||dy); if(moving){const len=Math.hypot(dx,dy)||1;
+      const nx=x+dx/len*90*dt, ny=y+dy/len*90*dt;
+      // 下段から上段に入る瞬間は、はしごの中心付近にいる必要がある。
+      if(!(ny < 278 && y >= 278 && Math.abs(x-ladder.x) >= 22)) y=ny;
+      x=nx; facing=dx<0?-1:dx>0?1:facing;walkT+=dt;
     }
-    g.clearRect(0,0,W,H);
-    g.fillStyle='#fff';g.fillRect(0,0,W,H);
-    // White room: floor grid and walls
-    polygon([[-5,0,-4.5],[5,0,-4.5],[5,0,4.5],[-5,0,4.5]],'#f7f7f7','#ddd');
-    polygon([[-5,0,4.5],[5,0,4.5],[5,4,4.5],[-5,4,4.5]],'#eee','#ddd');
-    polygon([[-5,0,-4.5],[-5,0,4.5],[-5,4,4.5],[-5,4,-4.5]],'#f4f4f4','#ddd');
-    for(let x=-4;x<=4;x++) line3([x,.005,-4.4],[x,.005,4.4],'#e5e5e5',.5);
-    for(let z=-4;z<=4;z++) line3([-4.8,.005,z],[4.8,.005,z],'#e5e5e5',.5);
-    // Bucket, cup station, and shop
-    box(0,2.5,1.05,1.05,1.0,'#9b704a');
-    box(-2,2.5,.9,.9,.12,'#69bfff');
-    box(-2,2.5,.12,.12,.86,'#b88b61');
-    box(-2,2.5,.92,.92,.05,'#69bfff');
-    box(3.2,-1.5,1.2,.8,1.15,'#c9c9c9');
-    polygon([[2.62,1.15,-1.92],[3.78,1.15,-1.92],[3.78,1.15,-1.08],[2.62,1.15,-1.08]],'#55aaff');
-    const b=project(0,1.45,2.5), cupMark=project(-2,1.45,2.5), sh=project(3.2,1.7,-1.5);
-    if(b){g.fillStyle='#333';g.font='bold 12px sans-serif';g.textAlign='center';g.fillText('桶',b[0],b[1]);}
-    if(cupMark){g.fillStyle='#333';g.font='bold 12px sans-serif';g.textAlign='center';g.fillText('コップ台',cupMark[0],cupMark[1]);}
-    if(sh){g.fillStyle='#333';g.font='bold 12px sans-serif';g.textAlign='center';g.fillText('SHOP',sh[0],sh[1]);}
-    // Spilled water stays visible on the floor.
-    spilled.forEach(d=>{const q=project(d.x,.025,d.z);if(q){g.fillStyle='rgba(35,145,255,.78)';g.beginPath();g.ellipse(q[0],q[1],Math.max(2,q[2]*.055),Math.max(1,q[2]*.022),0,0,Math.PI*2);g.fill();}});
-    // First-person arms and the cup held in front of the player.
-    g.fillStyle='#d9a47e';g.beginPath();g.moveTo(W*.28,H);g.lineTo(W*.36,H*.78);g.lineTo(W*.43,H*.82);g.lineTo(W*.43,H);g.fill();
-    g.beginPath();g.moveTo(W*.72,H);g.lineTo(W*.64,H*.78);g.lineTo(W*.57,H*.82);g.lineTo(W*.57,H);g.fill();
-    g.fillStyle='#d6ecf7';g.fillRect(W*.445,H*.79,W*.11,H*.15);g.fillStyle='#8dcfff';g.fillRect(W*.451,H*.82,W*.098,H*.11);
-    g.fillStyle='#333';g.font='12px sans-serif';g.textAlign='left';
-    g.fillText(`桶 ${bucket.toFixed(1)}%　コップ ${cup.toFixed(1)}%　手持ち ${carried.toFixed(1)}%`,10,18);
-    g.fillText(`水滴 ${spilled.reduce((a,d)=>a+d.amount,0).toFixed(1)}%　コイン ${credits}`,10,36);
-    g.fillText(`装備：${upgrades[tool].name}（容量 ${upgrades[tool].cap}%）`,10,54);
-    if(msgT>0)msgT-=dt;
-    g.fillStyle='rgba(255,255,255,.88)';g.fillRect(5,H-30,W-10,25);g.fillStyle='#222';g.font='12px sans-serif';g.textAlign='center';g.fillText(message,W/2,H-14);
-    // Clear only after every last bit has been poured into the cup and no floor spill remains.
+    x=Math.max(18,Math.min(W-18,x));y=Math.max(150,Math.min(316,y));
+    // Only small, discrete droplets fall off while moving; gravity gathers them into little puddles.
+    if(carried>0&&moving){spillClock+=dt*(1+upgrades[tool].spill*5);if(spillClock>1.6&&Math.random()<upgrades[tool].spill){spillClock=0;const amount=Math.min(.25,carried);carried-=amount;spilled.push({x:x-facing*9,y:310,amount,rx:2+Math.random()*2,ry:1.5});}}
+    spilled.forEach(d=>{d.y=Math.min(312,d.y+180*dt);d.rx=Math.min(8,d.rx+dt*1.4);d.ry=Math.min(3,d.ry+dt*.3);});
+    g.clearRect(0,0,W,H);g.fillStyle='#fff';g.fillRect(0,0,W,H);
+    // White room and floor
+    g.fillStyle='#f8f8f8';g.fillRect(0,110,W,210);g.fillStyle='#e5e5e5';g.fillRect(0,320,W,3);
+    g.strokeStyle='#eeeeee';g.lineWidth=1;for(let xx=0;xx<W;xx+=40){g.beginPath();g.moveTo(xx,110);g.lineTo(xx,320);g.stroke();}
+    // Bucket with visible water surface
+    g.fillStyle='#9b704a';g.beginPath();g.moveTo(125,170);g.lineTo(172,170);g.lineTo(166,225);g.lineTo(131,225);g.closePath();g.fill();
+    g.fillStyle='#6c4b31';g.fillRect(128,166,42,7);g.fillStyle='#48b7f4';g.beginPath();g.ellipse(149,170,20,4,0,0,Math.PI*2);g.fill();
+    // Ladder leaning against bucket, with rungs
+    g.strokeStyle='#b58a5b';g.lineWidth=4;g.beginPath();g.moveTo(175,300);g.lineTo(185,165);g.moveTo(195,300);g.lineTo(195,165);g.stroke();
+    for(let yy=180;yy<298;yy+=16){g.beginPath();g.moveTo(183+(300-yy)*.07,yy);g.lineTo(194,yy);g.stroke();}
+    g.fillStyle='#333';g.font='12px sans-serif';g.textAlign='center';g.fillText('水桶',149,151);g.fillText('はしご',188,314);
+    // Cup drawn as a real cup: tapered body, thick rim, water level, and handle
+    g.strokeStyle='#8aa4b5';g.lineWidth=4;g.beginPath();g.ellipse(cupArea.x+22,273,12,10,0,0,Math.PI*2);g.stroke();
+    g.fillStyle='#f4fbff';g.beginPath();g.moveTo(cupArea.x-12,270);g.lineTo(cupArea.x-7,309);g.quadraticCurveTo(cupArea.x+10,316,cupArea.x+27,309);g.lineTo(cupArea.x+32,270);g.closePath();g.fill();
+    g.save();g.beginPath();g.moveTo(cupArea.x-10,284);g.lineTo(cupArea.x-6,307);g.quadraticCurveTo(cupArea.x+10,312,cupArea.x+25,307);g.lineTo(cupArea.x+29,284);g.closePath();g.clip();g.fillStyle='#61c5f5';g.fillRect(cupArea.x-15,284+(1-Math.min(1,cup/100))*20,50,30);g.restore();
+    g.strokeStyle='#b6cbd7';g.lineWidth=3;g.beginPath();g.ellipse(cupArea.x+10,270,21,5,0,0,Math.PI*2);g.stroke();
+    g.fillStyle='#333';g.fillText('コップ',cupArea.x+10,250);
+    // Shop counter and upgrade sign
+    g.fillStyle='#bdbdbd';g.fillRect(625,270,75,35);g.fillStyle='#e8e8e8';g.fillRect(620,263,85,10);g.fillStyle='#3c8cbe';g.fillRect(633,232,60,28);g.fillStyle='#fff';g.font='bold 13px sans-serif';g.fillText('SHOP',663,250);g.fillStyle='#333';g.font='11px sans-serif';g.fillText('強化',663,319);
+    // Natural small puddle-like droplets on the floor
+    spilled.forEach(d=>{g.fillStyle='rgba(44,160,235,.72)';g.beginPath();g.ellipse(d.x,d.y,d.rx,d.ry,0,0,Math.PI*2);g.fill();g.strokeStyle='rgba(255,255,255,.8)';g.lineWidth=.6;g.beginPath();g.ellipse(d.x-1,d.y-1,Math.max(.5,d.rx*.35),Math.max(.5,d.ry*.35),0,0,Math.PI*2);g.stroke();});
+    drawPerson();
+    // HUD
+    g.fillStyle='rgba(255,255,255,.94)';g.fillRect(8,8,360,74);g.fillStyle='#222';g.textAlign='left';g.font='13px sans-serif';
+    g.fillText(`桶の水 ${bucket.toFixed(1)}滴　コップ ${cup.toFixed(1)}滴　手持ち ${carried.toFixed(2)}滴`,16,27);
+    g.fillText(`床の水滴 ${spilled.reduce((a,d)=>a+d.amount,0).toFixed(2)}滴　コイン ${credits}`,16,47);
+    g.fillText(`道具：${upgrades[tool].name}`,16,67);
+    g.fillStyle='rgba(255,255,255,.94)';g.fillRect(8,350,W-16,30);g.fillStyle='#222';g.textAlign='center';g.font='12px sans-serif';g.fillText(message,W/2,369);
     const remaining=spilled.reduce((a,d)=>a+d.amount,0);
-    if(bucket<.05&&carried<.05&&remaining<.05&&cup>=99.9){
-      done=true; say('完璧！床の水滴も全部コップに回収した！'); setTimeout(()=>{if(token===stageToken)win();},900); return;
-    }
+    if(bucket<.05&&carried<.05&&remaining<.05&&cup>=99.9){done=true;say('クリア！床にこぼれた水も全部コップに集めた！');setTimeout(()=>{if(token===stageToken)win();},900);return;}
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
