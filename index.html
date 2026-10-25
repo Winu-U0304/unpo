@@ -39,6 +39,20 @@ h2 { margin-top: 0; font-size: 24px; color: #ff3366; }
 @keyframes particleFall { 0% { transform: translate(0, 0); opacity: 1; } 100% { transform: translate(var(--x), var(--y)); opacity: 0.8; } }
 #sand-pile { position: absolute; bottom: 40px; left: 25%; width: 50%; height: 0px; background: #ffcc66; border-radius: 50% 50% 0 0; transition: height 0.5s ease-out; cursor: pointer; display: none; }
 .fake-popup { position: absolute; top: -60px; left: 5%; width: 90%; background: rgba(30,30,30,0.95); border: 1px solid #444; border-radius: 12px; padding: 10px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 50; transition: top 0.3s ease-out; }
+input { -webkit-user-select: text; user-select: text; }
+.title-logo { font-size: 44px; font-weight: bold; line-height: 1.15; color: #ff3366; text-shadow: 3px 3px #000; animation: bob 2s ease-in-out infinite; margin: 20px 0 10px; }
+.title-logo span { color: #ffcc00; font-size: 60px; margin-left: 8px; }
+@keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.title-sub { color: #aaa; margin-bottom: 24px; }
+#map-box { position: relative; width: 390px; }
+.node { position: absolute; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 15px; border: 3px solid #555; background: #2a2a2a; color: #777; box-sizing: border-box; }
+.node.open { background: #ff3366; border-color: #fff; color: #fff; cursor: pointer; animation: pulse 1.4s infinite; }
+.node.done { background: #0a7; border-color: #0fc; color: #fff; cursor: pointer; }
+.node.lock { font-size: 13px; }
+@keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.15); } }
+#map-cap { height: 20px; font-size: 13px; color: #ccc; margin: 6px 0; }
+.maplink { cursor: pointer; color: #6cf; text-decoration: underline; }
+.gb { min-width: 0; padding: 8px 16px; font-size: 16px; margin: 4px; touch-action: none; }
 </style>
 </head>
 <body>
@@ -133,7 +147,7 @@ function showGameOver(deathType, comment) {
   sendInsult(comment);
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
-  overlay.innerHTML = `<h1>GAME OVER</h1><div class="reason">${deathType}</div><button class="btn" onclick="restartStage()">このステージをやり直す</button>`;
+  overlay.innerHTML = `<h1>GAME OVER</h1><div class="reason">${deathType}</div><button class="btn" onclick="restartStage()">このステージをやり直す</button><button class="btn" style="font-size:13px;min-width:0;padding:6px 12px" onclick="showMap()">マップへ</button>`;
   document.getElementById('game-container').appendChild(overlay);
 }
 
@@ -160,29 +174,428 @@ function triggerJudge(isCorrect, callback) {
 
 function restartStage() { loadStage(currentStage); }
 
-function nextStage() {
-  currentStage++;
-  if (currentStage > 15) {
-    showClear();
-  } else {
-    loadStage(currentStage);
-  }
-}
+const TOTAL = 27;
+const NAMES = ['','ハ池','安全な道','ゴール','読み込み中','1+1','音量警告','宝箱','爆弾解除','利用規約','最終…？','音ゲー','進むボタン','ポーズ','10クリック','真・最終','3D視線','押すな','間違い探し','5秒ぴったり','パスワード','ジャンケン','逆スライダー','暗闇','動くな','消える選択肢','水桶','ラスボス'];
+let cleared = {};
+let cleanups = [];
+try { cleared = JSON.parse(localStorage.getItem('kichikuCleared') || '{}'); } catch (e) {}
+const saveProgress = () => { try { localStorage.setItem('kichikuCleared', JSON.stringify(cleared)); } catch (e) {} };
+const $ = id => document.getElementById(id);
+const win = () => triggerJudge(true, nextStage);
+const lose = (t, c) => triggerJudge(false, () => showGameOver(t, c));
 
-function showClear() {
-  stageToken++;
-  judging = false;
+function resetStage() {
+  stageToken++; judging = false;
+  cleanups.forEach(f => { try { f(); } catch (e) {} }); cleanups = [];
   if (outerHandler) { document.removeEventListener('click', outerHandler); outerHandler = null; }
-  stageArea.innerHTML = `<h1 style="color: #00ffcc; font-size: 36px;">終わり</h1><p style="font-size:18px;">おわり<br>END</p><div style="font-size:24px; color:#ff3366; font-weight:bold; margin:20px 0;">総死亡回数: ${deathCount} 回</div><button class="btn" onclick="deathCount=0; currentStage=1; loadStage(1);">最初から遊ぶ</button>`;
+  const o = document.querySelector('.overlay'); if (o) o.remove();
+}
+function showTitle() {
+  resetStage();
+  const has = Object.keys(cleared).length > 0;
+  stageArea.innerHTML = `<div class="title-logo">超・初見殺し<br>鬼畜ゲーム<span>極</span></div><div class="title-sub">〜 全${TOTAL}コース制覇の旅 〜</div>
+    <button class="btn" onclick="initAudio();startStage(1)">初めから</button><br>
+    <button class="btn" onclick="initAudio();showMap()">マップ</button>
+    ${has ? '<br><button class="btn" style="font-size:13px;min-width:0;padding:6px 12px" onclick="if(confirm(\'セーブデータを消しますか？（クリア記録が全て消えます）\')){cleared={};deathCount=0;saveProgress();showTitle();}">データ消去</button>' : ''}`;
+}
+function showMap() {
+  resetStage();
+  const cols = 6, h = Math.ceil(TOTAL / cols) * 56 + 16;
+  const pos = i => { const n = i - 1, r = Math.floor(n / cols); let c = n % cols; if (r % 2) c = cols - 1 - c; return [32 + c * 65, 30 + r * 56]; };
+  let pts = [], nodes = '';
+  for (let i = 1; i <= TOTAL; i++) {
+    const [x, y] = pos(i); pts.push(x + ',' + y);
+    const open = i === 1 || cleared[i - 1] || cleared[i];
+    const cls = cleared[i] ? 'done' : (open ? 'open' : 'lock');
+    nodes += `<div class="node ${cls}" style="left:${x - 18}px;top:${y - 18}px" ${open ? `onclick="startStage(${i})"` : ''} onmouseover="mapCap(${i},${!!open})">${cleared[i] ? '✓' : (open ? i : '🔒')}</div>`;
+  }
+  stageArea.innerHTML = `<h2>🗺 鬼畜ワールドマップ</h2><div id="death-counter-display">DEATH: ${deathCount}　CLEAR: ${Object.keys(cleared).length}/${TOTAL}</div>
+    <div id="map-box" style="height:${h}px"><svg width="390" height="${h}" style="position:absolute;left:0;top:0"><polyline points="${pts.join(' ')}" fill="none" stroke="#555" stroke-width="4" stroke-dasharray="8 6" stroke-linejoin="round"/></svg>${nodes}</div>
+    <div id="map-cap">コースを選んでください</div><button class="btn" style="font-size:13px;padding:6px 12px;min-width:0" onclick="showTitle()">タイトルへ</button>`;
+}
+function mapCap(i, open) { const c = $('map-cap'); if (c) c.innerText = open ? `ステージ${i}：${NAMES[i]}` : '？？？（前のコースをクリアで解放）'; }
+function startStage(i) { initAudio(); currentStage = i; loadStage(i); }
+
+
+function nextStage() {
+  cleared[currentStage] = true; saveProgress();
+  if (Object.keys(cleared).length >= TOTAL) showClear(); else showMap();
+}
+function showClear() {
+  stageToken++; judging = false;
+  if (outerHandler) { document.removeEventListener('click', outerHandler); outerHandler = null; }
+  stageArea.innerHTML = `<h1 style="color: #00ffcc; font-size: 36px;">全${TOTAL}コース制覇！</h1><p style="font-size:18px;">おわり<br>END</p><div style="font-size:24px; color:#ff3366; font-weight:bold; margin:20px 0;">総死亡回数: ${deathCount} 回</div><button class="btn" onclick="showMap()">マップへ</button><button class="btn" onclick="deathCount=0; cleared={}; saveProgress(); showTitle();">最初から遊ぶ</button>`;
   playSound('tettele');
 }
-
-function updateTitle(stageNum) {
-  return `<div class="stage-title">ステージ ${stageNum} / 15</div><div id="death-counter-display">DEATH: ${deathCount}</div>`;
+function updateTitle(n) {
+  return `<div class="stage-title">ステージ ${n} / ${TOTAL}　<span class="maplink" onclick="showMap()">🗺マップ</span></div><div id="death-counter-display">DEATH: ${deathCount}</div>`;
 }
+const EXTRA = {};
+
+
+EXTRA[16] = (token) => {
+  const CM = [['ペットボトル', 'bottle'], ['鉛筆', 'pencil'], ['消しゴム', 'eraser'], ['虫', 'bug']];
+  const cmd = CM[Math.floor(Math.random() * 4)];
+  stageArea.innerHTML = `${updateTitle(16)}<h2>3D：「${cmd[0]}をとって」</h2>
+    <canvas id="c3d" width="390" height="250" style="background:#10141c;border-radius:6px;cursor:crosshair"></canvas>
+    <div style="font-size:12px;color:#aaa;margin-top:6px">マウスで目線(矢印)を狙って <b>左クリック</b> で発射！机の下も狙えます。外すと撃たれます</div>`;
+  const cv = $('c3d'), g = cv.getContext('2d'), W = 390, H = 250, F = 270;
+  const FL = -2.6, DZ = 9.5, LOOK0 = [0, -.2, 1];
+  const OBJ = {
+    bottle: { n: 'ペットボトル', cx: 0.8, cz: 9.0, y: 0, bx: .45, bz: .45, h: 1.57 },
+    pencil: { n: '鉛筆', cx: -1.8, cz: 8.6, y: FL, bx: 1.1, bz: .12, h: .15 },
+    eraser: { n: '消しゴム', cx: 1.9, cz: 9.2, y: FL, bx: .5, bz: .35, h: .35 },
+    bug: { n: '虫', cx: 0.0, cz: 9.9, y: FL, bx: .5, bz: .5, h: .5 }
+  };
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], mul = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], nrm = a => mul(a, 1 / (Math.hypot(...a) || 1));
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const EYE = [0, 2.4, 0], V0 = 8.5, GR = 9;
+  let view, cam = EYE.slice(), look = add(EYE, LOOK0);
+  const setView = (c, t) => { const f = nrm(sub(t, c)), r = nrm([f[2], 0, -f[0]]); view = { c, f, r, u: cross(f, r) }; };
+  const pj = p => { const q = sub(p, view.c), z = dot(q, view.f); return [W / 2 + F * dot(q, view.r) / z, H / 2 - F * dot(q, view.u) / z, z]; };
+  const rgb = (c, k) => `rgb(${Math.min(255, c[0] * k) | 0},${Math.min(255, c[1] * k) | 0},${Math.min(255, c[2] * k) | 0})`;
+  const prism = (cx, y0, cz, rx, rz, h, n, c, rot) => {
+    const o = [], q = [];
+    for (let i = 0; i < n; i++) { const a = rot + i * 2 * Math.PI / n; q.push([cx + Math.cos(a) * rx, cz + Math.sin(a) * rz, a]); }
+    for (let i = 0; i < n; i++) { const a = q[i], b = q[(i + 1) % n]; o.push({ pts: [[a[0], y0, a[1]], [b[0], y0, b[1]], [b[0], y0 + h, b[1]], [a[0], y0 + h, a[1]]], col: rgb(c, .55 + .4 * Math.abs(Math.sin(a[2] + Math.PI / n))) }); }
+    o.push({ pts: q.map(a => [a[0], y0 + h, a[1]]), col: rgb(c, 1.15) });
+    return o;
+  };
+  const box = (cx, y0, cz, bx, bz, h, c) => prism(cx, y0, cz, bx * 1.4142, bz * 1.4142, h, 4, c, Math.PI / 4);
+  const drawFaces = faces => {
+    faces.map(f => { const p = f.pts.map(pj); return { p, col: f.col, z: p.reduce((a, q) => a + q[2], 0) / p.length }; })
+      .filter(f => f.p.every(q => q[2] > .2)).sort((a, b) => b.z - a.z)
+      .forEach(f => { g.fillStyle = f.col; g.beginPath(); f.p.forEach((q, i) => i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1])); g.closePath(); g.fill(); g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 1; g.stroke(); });
+  };
+  const ln = (a, b, col, w) => { const p = pj(a), q = pj(b); if (p[2] < .2 || q[2] < .2) return; g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke(); };
+  const txt = (s, p, size, col) => { const q = pj(p); if (q[2] < .3) return; g.font = `${size * F / q[2]}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = col || '#fff'; g.fillText(s, q[0], q[1]); };
+  const dot3 = (p, r, col) => { const q = pj(p); if (q[2] < .3) return; g.fillStyle = col; g.beginPath(); g.arc(q[0], q[1], Math.max(1.5, r * F / q[2]), 0, 7); g.fill(); };
+  const arrow = (tail, d, len) => {
+    const tip = add(tail, mul(d, len)), s = F / Math.max(.3, pj(tail)[2]), w = Math.max(2, .09 * s);
+    ln(tail, tip, '#ffcc00', w);
+    const up = Math.abs(d[1]) > .95 ? [1, 0, 0] : [0, 1, 0], u = nrm(cross(up, d)), v = cross(d, u), b = sub(tip, mul(d, .35));
+    [[u, 1], [u, -1], [v, 1], [v, -1]].forEach(([e, k]) => ln(tip, add(b, mul(e, k * .2)), '#ffcc00', w));
+  };
+  const inDesk = p => Math.abs(p[0]) < 4.5 && Math.abs(p[2] - DZ) < 2.5;
+  const step = (p, v, dt) => {
+    const py = p[1];
+    v[1] -= GR * dt; p[0] += v[0] * dt; p[1] += v[1] * dt; p[2] += v[2] * dt;
+    if (inDesk(p)) {
+      if (py >= 0 && p[1] < 0) {
+        p[1] = 0; const hit = Math.abs(v[1]) > 1; v[1] = hit ? -v[1] * .6 : 0;
+        if (hit) { v[0] *= .85; v[2] *= .85; } else { v[0] *= .995; v[2] *= .995; } return hit ? 'bounce' : '';
+      }
+      if (py <= -.3 && p[1] > -.3) { p[1] = -.3; v[1] = -Math.abs(v[1]) * .4; return 'bounce'; }
+    }
+    if (p[1] < FL) { p[1] = FL; const hit = Math.abs(v[1]) > 1; v[1] = hit ? -v[1] * .5 : 0; if (hit) { v[0] *= .9; v[2] *= .9; } else { v[0] *= .99; v[2] *= .99; } return hit ? 'floor' : ''; }
+    return '';
+  };
+  const hitObj = p => Object.keys(OBJ).find(k => { const o = OBJ[k]; return Math.abs(p[0] - o.cx) <= o.bx + .15 && Math.abs(p[2] - o.cz) <= o.bz + .15 && p[1] - o.y <= o.h + .15 && p[1] - o.y >= -.15; });
+  const aimDir = (mx, my) => { const f = nrm(LOOK0), r = nrm([f[2], 0, -f[0]]), u = cross(f, r), x = (mx - W / 2) / F, y = -(my - H / 2) / F; return nrm(add(add(mul(r, x), mul(u, y)), f)); };
+  const START = () => add(add(EYE, [0, -.3, 0]), mul(nrm(sub(look, EYE)), .6));
+
+  let phase = 'aim', mx = W / 2, my = 70, p = null, v = null, hd = [0, 0, 1], trail = [], tt = 0, rest = 0, endT = 0, fin = false, say = '実況：さあ、目線を狙っていきます…', result = '';
+  const mm = e => { const r = cv.getBoundingClientRect(); mx = (e.clientX - r.left) * W / r.width; my = (e.clientY - r.top) * H / r.height; };
+  cv.addEventListener('pointermove', mm);
+  cv.addEventListener('pointerdown', e => {
+    mm(e); if (phase !== 'aim' || e.button > 0) return;
+    const d = aimDir(mx, my); p = START(); v = mul(d, V0); hd = nrm([d[0], 0, d[2]]); phase = 'fly'; say = '実況：目線が発射されました！！';
+  });
+  const finish = (ok, why) => { phase = 'end'; result = ok ? 'ok' : 'ng'; endT = 0; why && (say = why); };
+  let last = performance.now(), lastTrail = 0;
+  function frame(now) {
+    if (token !== stageToken || fin) return;
+    const dt = Math.min(.033, (now - last) / 1000); last = now;
+    if (phase === 'fly') {
+      tt += dt; const n = Math.ceil(dt * 240);
+      for (let i = 0; i < n && phase === 'fly'; i++) {
+        const ev = step(p, v, dt / n);
+        if (ev === 'bounce') say = '実況：バウンド！ポンポン弾んでいます！';
+        if (ev === 'floor') say = '実況：机から落ちたー！';
+        const h = hitObj(p);
+        if (h) { if (h === cmd[1]) finish(true, `実況：${OBJ[h].n}に命中！！命令達成！`); else finish(false, `実況：あっと${OBJ[h].n}だー！！違うぞー！`); }
+      }
+      if (tt - lastTrail > .03) { trail.push(p.slice()); lastTrail = tt; if (trail.length > 120) trail.shift(); }
+      if (phase === 'fly') { if (Math.hypot(...v) < .5 && (p[1] <= .02 || p[1] <= FL + .01)) rest += dt; else rest = 0; if (rest > .5 || tt > 8) finish(false, '実況：目線が止まった…どこも見ていない！'); }
+    }
+    if (phase === 'end') { endT += dt; if (endT > 1.2) { fin = true; if (result === 'ok') { win(); } else { lose('銃殺死', `「${cmd[0]}をとって」と命令されたのに目線を外しました。命令違反は即・銃殺です。`); } return; } }
+    // カメラ
+    let cT, lT;
+    if (phase === 'aim') { cT = EYE; lT = add(EYE, LOOK0); }
+    else { cT = add(p, [-hd[0] * 4.5, 2.2, -hd[2] * 4.5]); cT[1] = Math.max(cT[1], FL + 1); lT = add(p, mul(hd, 1.5)); }
+    const k = 1 - Math.exp(-dt * 4); cam = add(cam, mul(sub(cT, cam), k)); look = add(look, mul(sub(lT, look), k));
+    setView(cam, look);
+    // 描画
+    g.fillStyle = '#10141c'; g.fillRect(0, 0, W, H);
+    for (let x = -12; x <= 12; x += 3) ln([x, FL, -4], [x, FL, 20], '#232b3a', 1);
+    for (let z = -4; z <= 20; z += 3) ln([-12, FL, z], [12, FL, z], '#232b3a', 1);
+    txt('😠', [0, 1.3, 14.5], 2.2); txt('🔫', [-1, .9, 14], 1.3);
+    const leg = (x, z) => box(x, FL, z, .18, .18, -FL - .3, [90, 60, 35]), o = OBJ;
+    drawFaces([...leg(-4.2, DZ + 2.2), ...leg(4.2, DZ + 2.2)]);
+    drawFaces([...box(o.pencil.cx, FL, o.pencil.cz, o.pencil.bx, o.pencil.bz + .03, o.pencil.h, [240, 200, 40]), ...box(o.eraser.cx, FL, o.eraser.cz, o.eraser.bx, o.eraser.bz, o.eraser.h, [240, 230, 235])]);
+    txt('🐛', [o.bug.cx, FL + .4, o.bug.cz], 1);
+    drawFaces([...leg(-4.2, DZ - 2.2), ...leg(4.2, DZ - 2.2)]); drawFaces(box(0, -.3, DZ, 4.5, 2.5, .3, [150, 100, 55]));
+    if (p && inDesk(p) && p[1] >= 0) dot3([p[0], .02, p[2]], .12, 'rgba(0,0,0,.5)');
+    drawFaces([...prism(o.bottle.cx, 0, o.bottle.cz, .45, .45, 1.2, 10, [90, 170, 255], 0), ...prism(o.bottle.cx, 1.2, o.bottle.cz, .2, .2, .25, 8, [110, 180, 255], 0), ...prism(o.bottle.cx, 1.45, o.bottle.cz, .22, .22, .12, 8, [245, 245, 245], 0)]);
+    if (phase === 'aim') {
+      Object.keys(o).forEach(key => txt(o[key].n, [o[key].cx, o[key].y + o[key].h + .5, o[key].cz], .22, key === cmd[1] ? '#ffcc00' : '#ccc'));
+      const d = aimDir(mx, my), s0 = START(), pp = s0.slice(), vv = mul(d, V0);
+      for (let i = 0; i < 90; i++) { const ev = step(pp, vv, 1 / 60); if (i % 3 === 0) dot3(pp, .05, 'rgba(255,255,255,.6)'); if (ev || hitObj(pp)) break; }
+      arrow(s0, d, 1.5);
+      g.strokeStyle = '#ff3366'; g.lineWidth = 2; g.beginPath(); g.arc(mx, my, 9, 0, 7); g.moveTo(mx - 14, my); g.lineTo(mx + 14, my); g.moveTo(mx, my - 14); g.lineTo(mx, my + 14); g.stroke();
+    } else {
+      trail.forEach((q, i) => dot3(q, .05, `rgba(255,204,0,${i / trail.length * .8})`));
+      arrow(p, nrm(v), 1.1);
+    }
+    // HUD
+    g.fillStyle = '#e00'; g.fillRect(8, 8, 74, 18); g.fillStyle = '#fff'; g.font = 'bold 12px sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText('● LIVE 生中継', 12, 17);
+    g.fillStyle = 'rgba(0,0,0,.65)'; g.fillRect(0, H - 26, W, 26); g.fillStyle = '#fff'; g.font = '13px sans-serif'; g.fillText(say, 10, H - 13);
+    g.textAlign = 'right'; g.fillStyle = '#ffcc00'; g.fillText(`命令：${cmd[0]}をとって`, W - 8, 17);
+    if (phase === 'end' && result === 'ng') { g.fillStyle = `rgba(255,0,40,${Math.max(0, .7 - endT * .5)})`; g.fillRect(0, 0, W, H); g.font = '90px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#fff'; g.fillText('🔫', W / 2, H / 2 - 10); g.font = 'bold 40px sans-serif'; g.fillStyle = '#fff'; g.fillText('バァン！', W / 2, H / 2 + 50); }
+    if (phase === 'end' && result === 'ok') { g.font = 'bold 40px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#0fc'; g.fillText('命令達成！', W / 2, H / 2); }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+};
+
+EXTRA[17] = (token) => {
+  stageArea.innerHTML = `${updateTitle(17)}<h2>絶対に押すなよ？</h2><button class="btn" id="dont" style="background:#a00;font-size:28px;padding:20px 40px">押すな</button><div id="dont-msg" style="height:20px;color:#888"></div>`;
+  $('dont').onclick = () => lose('押しちゃった死', '「押すな」は本当に押すなという意味でした。');
+  setTimeout(() => { if (token === stageToken && $('dont-msg')) $('dont-msg').innerText = '…まだ押さないでね…'; }, 2500);
+  setTimeout(() => { if (token === stageToken) win(); }, 5000);
+};
+
+EXTRA[18] = (token) => {
+  const odd = Math.floor(Math.random() * 20);
+  let h = ''; for (let i = 0; i < 20; i++) h += `<span class="cell" style="cursor:pointer;font-size:30px" data-odd="${i === odd ? 1 : 0}">${i === odd ? '🐕' : '🐶'}</span>`;
+  stageArea.innerHTML = `${updateTitle(18)}<h2><span id="typo" class="hidden-trigger">ま</span>違い探し：おかしな所を押せ</h2><div style="width:320px;line-height:1.3">${h}</div>`;
+  $('typo').onclick = win;
+  stageArea.querySelectorAll('.cell').forEach(c => c.onclick = () => lose('犬違い死', c.dataset.odd === '1' ? '犬は確かに違うが、本当におかしいのは見出しの「ま」でした。' : 'どの犬も同じ。見出しをよく見て。'));
+};
+
+EXTRA[19] = (token) => {
+  stageArea.innerHTML = `${updateTitle(19)}<h2>ちょうど5秒後に押せ</h2><div id="tm" style="font-size:34px;margin:10px">0.0</div><button class="btn" id="b5">スタート</button>`;
+  let t0 = 0, iv = null;
+  $('b5').onclick = () => {
+    if (!t0) {
+      t0 = performance.now(); $('b5').innerText = 'ストップ';
+      iv = setInterval(() => { if (token !== stageToken) { clearInterval(iv); return; } const t = (performance.now() - t0) / 1000; $('tm').innerText = t < 2 ? t.toFixed(1) : '?.?'; }, 100);
+    } else {
+      clearInterval(iv); const t = (performance.now() - t0) / 1000; $('tm').innerText = t.toFixed(2);
+      if (Math.abs(t - 5) <= 0.5) win(); else lose('体内時計死', `あなたの5秒は ${t.toFixed(2)} 秒でした（許容は4.5〜5.5秒）。`);
+    }
+  };
+};
+
+EXTRA[20] = (token) => {
+  stageArea.innerHTML = `${updateTitle(20)}<h2>パスワードを入力せよ</h2><input id="pw" placeholder="パスワード" style="font-size:18px;padding:8px;width:220px"><br><button class="btn" id="pwok">ログイン</button>
+    <div id="pwf" class="hidden-trigger" style="font-size:12px;color:#888;text-decoration:underline">パスワードを忘れた方</div><div id="pwh" style="font-size:13px;color:#ffcc00;height:20px;margin-top:6px"></div>`;
+  $('pwf').onclick = () => { $('pwh').innerText = 'ヒント：パスワードは「ひみつ」です（秘密とは）'; };
+  const go = () => { if ($('pw').value.trim() === 'ひみつ') win(); else lose('不正アクセス死', 'そのパスワードは違う。「忘れた方」を押せば教えてくれたのに。'); };
+  $('pwok').onclick = go; $('pw').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+};
+
+EXTRA[21] = (token) => {
+  stageArea.innerHTML = `${updateTitle(21)}<h2>後出しジャンケン</h2><div style="font-size:60px">✊</div><p>相手の手はグー。<b style="color:#ff3366">負けたほうが勝ち。</b></p>
+    <button class="btn" id="r0" style="min-width:0">✊</button><button class="btn" id="r1" style="min-width:0">✌️</button><button class="btn" id="r2" style="min-width:0">✋</button>`;
+  $('r0').onclick = () => lose('あいこ死', 'あいこでは負けられません。');
+  $('r1').onclick = win;
+  $('r2').onclick = () => lose('勝利死', '「負けたほうが勝ち」と言ったのに勝ってしまいました。');
+};
+
+EXTRA[22] = (token) => {
+  stageArea.innerHTML = `${updateTitle(22)}<h2>音量を <b style="color:#ff3366">42</b> にせよ</h2><div id="sv" style="font-size:44px">50</div>
+    <input type="range" id="sl" min="0" max="100" value="50" style="width:300px"><br><button class="btn" id="slok">決定</button>`;
+  const disp = () => 100 - $('sl').value;
+  $('sl').addEventListener('input', () => { $('sv').innerText = disp(); });
+  $('slok').onclick = () => { if (Math.abs(disp() - 42) <= 1) win(); else lose('音量調整死', `${disp()} でした。スライダーが逆向きだと気づけたかな？`); };
+};
+
+EXTRA[23] = (token) => {
+  const slots = [...Array(12).keys()].sort(() => Math.random() - .5).slice(0, 5);
+  const items = slots.map((s, k) => `<div class="dk-item" data-door="${k === 0 ? 1 : 0}" style="position:absolute;left:${15 + (s % 4) * 85}px;top:${10 + Math.floor(s / 4) * 70}px;font-size:36px;cursor:pointer">${k === 0 ? '🚪' : '💀'}</div>`).join('');
+  stageArea.innerHTML = `${updateTitle(23)}<h2>暗闇からドアを探せ</h2><div id="dk" style="position:relative;width:360px;height:220px;background:#444;border-radius:6px;overflow:hidden">${items}
+    <div style="position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle 55px at var(--mx,50%) var(--my,50%),transparent 0,transparent 60%,#000 100%)"></div></div>`;
+  const dk = $('dk');
+  const mv = e => { const r = dk.getBoundingClientRect(); dk.style.setProperty('--mx', (e.clientX - r.left) + 'px'); dk.style.setProperty('--my', (e.clientY - r.top) + 'px'); };
+  dk.addEventListener('pointermove', mv); dk.addEventListener('pointerdown', mv);
+  dk.querySelectorAll('.dk-item').forEach(it => it.onclick = () => it.dataset.door === '1' ? win() : lose('闇討ち死', '暗闇で罠を踏みました。ドアは🚪です。'));
+};
+
+EXTRA[24] = (token) => {
+  stageArea.innerHTML = `${updateTitle(24)}<h2>3秒間 マウスを動かすな</h2><div id="mv" style="font-size:40px;margin:10px">準備OK？</div><button class="btn" id="mvb">スタート</button>`;
+  $('mvb').onclick = () => {
+    $('mvb').style.display = 'none'; $('mv').innerText = '手を止めて…';
+    let dist = 0, lx = null, ly = null, on = false;
+    const mm = e => { if (!on) return; if (lx !== null) dist += Math.hypot(e.clientX - lx, e.clientY - ly); lx = e.clientX; ly = e.clientY; if (dist > 12) { on = false; lose('ぴくり死', '動いてしまいました。'); } };
+    document.addEventListener('pointermove', mm); cleanups.push(() => document.removeEventListener('pointermove', mm));
+    setTimeout(() => { if (token === stageToken) { on = true; $('mv').innerText = '3'; } }, 700);
+    setTimeout(() => { if (token === stageToken && on) $('mv').innerText = '2'; }, 1700);
+    setTimeout(() => { if (token === stageToken && on) $('mv').innerText = '1'; }, 2700);
+    setTimeout(() => { if (token === stageToken && on) { on = false; win(); } }, 3700);
+  };
+};
+
+EXTRA[25] = (token) => {
+  stageArea.innerHTML = `${updateTitle(25)}<h2>正しいのはどれ？</h2><div id="opts">${['A', 'B', 'C', 'D'].map(c => `<button class="btn opt" style="min-width:60px">${c}</button>`).join('')}</div>`;
+  const bs = [...stageArea.querySelectorAll('.opt')];
+  const vis = () => bs.filter(b => b.style.visibility !== 'hidden');
+  bs.forEach(b => b.onclick = () => { if (vis().length > 1) lose('せっかち死', '選択肢は勝手に消えていく。待てば正解が残ったのに。'); else win(); });
+  const iv = setInterval(() => {
+    if (token !== stageToken) { clearInterval(iv); return; }
+    const v = vis(); if (v.length <= 1) { clearInterval(iv); return; }
+    v[Math.floor(Math.random() * v.length)].style.visibility = 'hidden';
+  }, 1000);
+};
+
+EXTRA[26] = (token) => {
+  stageArea.innerHTML = `${updateTitle(26)}<h2>水桶チャレンジ：一滴残らずコップへ！</h2>
+    <canvas id="cw" width="520" height="330" style="background:#fff;border:2px solid #ddd;border-radius:6px;cursor:crosshair;max-width:100%"></canvas>
+    <div style="font-size:12px;color:#aaa;margin-top:6px"><b>WASD / 矢印</b>で一人称移動、マウスで視点変更。桶の前で <b>Space</b> ですくい、コップの前で <b>E</b> で注ぐ。床にこぼれた水は消えない！水滴の上で <b>E</b> を押してコップに回収しよう。ショップに近づいて <b>E</b> で道具を購入。</div>`;
+  const cv = $('cw'), g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const keys = {};
+  let px = 0, pz = -2.7, yaw = 0, pitch = 0, lastX = null, lastY = null;
+  let bucket = 100, cup = 0, carried = 0, spilled = [], totalSpilled = 0, recovered = 0;
+  let tool = 0, message = '桶の水をコップへ運ぼう。こぼれた水も全部回収！', msgT = 5, done = false;
+  const upgrades = [
+    {name:'小さなコップ', cost:0, cap:8, spill:.30},
+    {name:'大きめコップ', cost:15, cap:15, spill:.22},
+    {name:'ふた付きコップ', cost:35, cap:22, spill:.12},
+    {name:'水回収ネット', cost:60, cap:30, spill:.06}
+  ];
+  let credits = 0;
+  const say = t => { message = t; msgT = 3; };
+  const kd = e => {
+    const k = e.key.toLowerCase();
+    if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
+    keys[k] = true;
+    if (k === ' ' && near(0, 2.5, 1.15) && bucket > 0 && carried < upgrades[tool].cap) {
+      const n = Math.min(bucket, upgrades[tool].cap - carried, 8);
+      if (n > 0) { bucket -= n; carried += n; say(`コップに水を ${n}% すくった！ゆっくり運ぼう。`); }
+    }
+    if (k === 'e') interact();
+  };
+  const ku = e => { keys[e.key.toLowerCase()] = false; };
+  document.addEventListener('keydown', kd); document.addEventListener('keyup', ku);
+  cleanups.push(() => { document.removeEventListener('keydown', kd); document.removeEventListener('keyup', ku); });
+  cv.addEventListener('pointerdown', e => { cv.setPointerCapture?.(e.pointerId); lastX=e.clientX; lastY=e.clientY; });
+  cv.addEventListener('pointermove', e => {
+    if (!(e.buttons & 1) || lastX === null) return;
+    yaw += (e.clientX-lastX)*.008; pitch = Math.max(-.35,Math.min(.35,pitch+(e.clientY-lastY)*.004));
+    lastX=e.clientX; lastY=e.clientY;
+  });
+  cv.addEventListener('pointerup', () => { lastX=null; lastY=null; });
+  function near(x,z,r){ return Math.hypot(px-x,pz-z)<r; }
+  function interact() {
+    if (near(-2,2.5,1.25) && carried > 0) {
+      cup += carried; carried = 0; credits += Math.floor(cup/10); say('コップへ注いだ！ショップで道具を強化できるよ。'); return;
+    }
+    const d = spilled.findIndex(d => Math.hypot(px-d.x,pz-d.z)<.85);
+    if (d >= 0) {
+      const drop = spilled.splice(d,1)[0];
+      const room = upgrades[tool].cap-carried;
+      const n = Math.min(drop.amount, room);
+      carried += n;
+      if (drop.amount > n) spilled.push({...drop, amount:drop.amount-n});
+      recovered += n; say(`床の水滴を ${n.toFixed(1)}% 回収！残りの水滴も探そう。`); return;
+    }
+    if (near(3.2,-1.5,1.35)) {
+      if (tool < upgrades.length-1 && credits >= upgrades[tool+1].cost) {
+        tool++; credits -= upgrades[tool].cost; say(`ショップ購入！${upgrades[tool].name}にアップグレード！`);
+      } else if (tool < upgrades.length-1) say(`次の強化「${upgrades[tool+1].name}」には ${upgrades[tool+1].cost} コイン必要。注いだ水でコインを得よう。`);
+      else say('ショップの強化は全部そろった！');
+      return;
+    }
+    if (near(-2,2.5,1.25) && carried <= 0) { say('コップに水がないよ。桶か床の水滴から回収しよう。'); return; }
+    say('近くに桶・コップ・ショップ・水滴がないみたい。');
+  }
+  function project(x,y,z) {
+    const dx=x-px, dz=z-pz, c=Math.cos(yaw), s=Math.sin(yaw);
+    const rx=dx*c-dz*s, rz=dx*s+dz*c;
+    const depth=rz+4.8;
+    if(depth<.18) return null;
+    const scale=260/depth;
+    return [W/2+rx*scale, H*.55-(y-1.55-pitch*depth)*scale, scale, depth];
+  }
+  function line3(a,b,color,width=1) {
+    const p=project(...a), q=project(...b); if(!p||!q)return;
+    g.strokeStyle=color; g.lineWidth=Math.max(.6,width*(p[2]+q[2])/2/100); g.beginPath();g.moveTo(p[0],p[1]);g.lineTo(q[0],q[1]);g.stroke();
+  }
+  function polygon(points,fill,stroke=null) {
+    const ps=points.map(p=>project(...p)); if(ps.some(p=>!p))return;
+    g.beginPath();ps.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.closePath();g.fillStyle=fill;g.fill();
+    if(stroke){g.strokeStyle=stroke;g.stroke();}
+  }
+  function box(x,z,w,d,h,color) {
+    polygon([[x-w/2,0,z-d/2],[x+w/2,0,z-d/2],[x+w/2,h,z-d/2],[x-w/2,h,z-d/2]],color);
+    polygon([[x+w/2,0,z-d/2],[x+w/2,0,z+d/2],[x+w/2,h,z+d/2],[x+w/2,h,z-d/2]],color);
+    polygon([[x-w/2,h,z-d/2],[x+w/2,h,z-d/2],[x+w/2,h,z+d/2],[x-w/2,h,z+d/2]],color);
+  }
+  function frame(now) {
+    if(token!==stageToken||done)return;
+    const dt=Math.min(.04,(now-(frame.last||now))/1000); frame.last=now;
+    const speed=2.8*dt, f=(keys.w||keys.arrowup?1:0)-(keys.s||keys.arrowdown?1:0), side=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0);
+    px += (Math.sin(yaw)*f+Math.cos(yaw)*side)*speed;
+    pz += (Math.cos(yaw)*f-Math.sin(yaw)*side)*speed;
+    px=Math.max(-4.7,Math.min(4.7,px)); pz=Math.max(-4.2,Math.min(4.2,pz));
+    // Movement sloshes water out; spilled drops remain on the floor until picked up.
+    if(carried>0 && (f||side)) {
+      const amount=Math.min(carried,upgrades[tool].spill*dt*(Math.abs(f)+Math.abs(side))*3);
+      if(amount>.015){carried-=amount;spilled.push({x:px-Math.sin(yaw)*.3+(Math.random()-.5)*.25,z:pz-Math.cos(yaw)*.3+(Math.random()-.5)*.25,amount});totalSpilled+=amount;}
+    }
+    g.clearRect(0,0,W,H);
+    g.fillStyle='#fff';g.fillRect(0,0,W,H);
+    // White room: floor grid and walls
+    polygon([[-5,0,-4.5],[5,0,-4.5],[5,0,4.5],[-5,0,4.5]],'#f7f7f7','#ddd');
+    polygon([[-5,0,4.5],[5,0,4.5],[5,4,4.5],[-5,4,4.5]],'#eee','#ddd');
+    polygon([[-5,0,-4.5],[-5,0,4.5],[-5,4,4.5],[-5,4,-4.5]],'#f4f4f4','#ddd');
+    for(let x=-4;x<=4;x++) line3([x,.005,-4.4],[x,.005,4.4],'#e5e5e5',.5);
+    for(let z=-4;z<=4;z++) line3([-4.8,.005,z],[4.8,.005,z],'#e5e5e5',.5);
+    // Bucket, cup station, and shop
+    box(0,2.5,1.05,1.05,1.0,'#9b704a');
+    box(-2,2.5,.9,.9,.12,'#69bfff');
+    box(-2,2.5,.12,.12,.86,'#b88b61');
+    box(-2,2.5,.92,.92,.05,'#69bfff');
+    box(3.2,-1.5,1.2,.8,1.15,'#c9c9c9');
+    polygon([[2.62,1.15,-1.92],[3.78,1.15,-1.92],[3.78,1.15,-1.08],[2.62,1.15,-1.08]],'#55aaff');
+    const b=project(0,1.45,2.5), cupMark=project(-2,1.45,2.5), sh=project(3.2,1.7,-1.5);
+    if(b){g.fillStyle='#333';g.font='bold 12px sans-serif';g.textAlign='center';g.fillText('桶',b[0],b[1]);}
+    if(cupMark){g.fillStyle='#333';g.font='bold 12px sans-serif';g.textAlign='center';g.fillText('コップ台',cupMark[0],cupMark[1]);}
+    if(sh){g.fillStyle='#333';g.font='bold 12px sans-serif';g.textAlign='center';g.fillText('SHOP',sh[0],sh[1]);}
+    // Spilled water stays visible on the floor.
+    spilled.forEach(d=>{const q=project(d.x,.025,d.z);if(q){g.fillStyle='rgba(35,145,255,.78)';g.beginPath();g.ellipse(q[0],q[1],Math.max(2,q[2]*.055),Math.max(1,q[2]*.022),0,0,Math.PI*2);g.fill();}});
+    // First-person arms and the cup held in front of the player.
+    g.fillStyle='#d9a47e';g.beginPath();g.moveTo(W*.28,H);g.lineTo(W*.36,H*.78);g.lineTo(W*.43,H*.82);g.lineTo(W*.43,H);g.fill();
+    g.beginPath();g.moveTo(W*.72,H);g.lineTo(W*.64,H*.78);g.lineTo(W*.57,H*.82);g.lineTo(W*.57,H);g.fill();
+    g.fillStyle='#d6ecf7';g.fillRect(W*.445,H*.79,W*.11,H*.15);g.fillStyle='#8dcfff';g.fillRect(W*.451,H*.82,W*.098,H*.11);
+    g.fillStyle='#333';g.font='12px sans-serif';g.textAlign='left';
+    g.fillText(`桶 ${bucket.toFixed(1)}%　コップ ${cup.toFixed(1)}%　手持ち ${carried.toFixed(1)}%`,10,18);
+    g.fillText(`水滴 ${spilled.reduce((a,d)=>a+d.amount,0).toFixed(1)}%　コイン ${credits}`,10,36);
+    g.fillText(`装備：${upgrades[tool].name}（容量 ${upgrades[tool].cap}%）`,10,54);
+    if(msgT>0)msgT-=dt;
+    g.fillStyle='rgba(255,255,255,.88)';g.fillRect(5,H-30,W-10,25);g.fillStyle='#222';g.font='12px sans-serif';g.textAlign='center';g.fillText(message,W/2,H-14);
+    // Clear only after every last bit has been poured into the cup and no floor spill remains.
+    const remaining=spilled.reduce((a,d)=>a+d.amount,0);
+    if(bucket<.05&&carried<.05&&remaining<.05&&cup>=99.9){
+      done=true; say('完璧！床の水滴も全部コップに回収した！'); setTimeout(()=>{if(token===stageToken)win();},900); return;
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+};
+EXTRA[27] = (token) => {
+  stageArea.innerHTML = `${updateTitle(27)}<h2>ラスボス 🐉 が現れた！</h2><div style="font-size:70px">🐉</div><div style="font-size:14px;color:#ccc;height:24px">HP ∞　どうする？</div>
+    <button class="btn" id="m0">たたかう</button><button class="btn" id="m1">まほう</button><br><button class="btn" id="m2">どうぐ</button><button class="btn" id="m3">にげる</button>`;
+  $('m0').onclick = () => lose('竜炎死', 'ダメージ0。ボスのHPは無限でした。');
+  $('m1').onclick = () => lose('MP不足死', 'MPが足りなかった…');
+  $('m2').onclick = () => lose('空っぽ死', '道具袋は空っぽでした。');
+  $('m3').onclick = win;
+};
 
 function loadStage(stageNum) {
   initAudio();
+  cleanups.forEach(f => { try { f(); } catch (e) {} }); cleanups = [];
   const token = ++stageToken;
   judging = false;
   if (outerHandler) { document.removeEventListener('click', outerHandler); outerHandler = null; }
@@ -463,16 +876,19 @@ function loadStage(stageNum) {
       };
       setTimeout(() => { if (token === stageToken && outerHandler) document.addEventListener('click', outerHandler); }, 0);
       break;
+
+    default:
+      if (EXTRA[stageNum]) EXTRA[stageNum](token);
   }
 
   const footer = document.createElement('div');
   footer.style = 'margin-top:20px; font-size:12px; color:#555; cursor:pointer; text-decoration:underline;';
   footer.innerText = '2も実装計画しております。';
-  footer.onclick = () => { playSound('miss'); alert('馬と鹿だね！あ'); };
+  footer.onclick = () => { playSound('miss'); alert('嘘でした！ｗｗ'); };
   stageArea.appendChild(footer);
 }
 
-loadStage(1);
+showTitle();
 </script>
 </body>
 </html>
